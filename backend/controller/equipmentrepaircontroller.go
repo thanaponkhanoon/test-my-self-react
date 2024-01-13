@@ -1,0 +1,129 @@
+package controller
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/asaskevich/govalidator"
+	"github.com/gin-gonic/gin"
+	"github.com/thanaponkhanoon/test-my-self-react/entity"
+)
+
+func CreateEquipmentRepair(c *gin.Context) { // c รับข้อมูลมาจาก api
+
+	var equipmentrepair entity.EquipmentRepair
+	var equipmentpurchasing entity.EquipmentPurchasing
+	var level entity.Level
+	var librarian entity.Librarian
+
+	//ผลลัพทธ์ที่ได้จากขั้นตอนที่ 8 จะถูก bind เข้าตัวแปล bookrepair
+	if err := c.ShouldBindJSON(&equipmentrepair); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	} //การบาย
+
+	//9: ค้นหา librarian ด้วย id
+	if tx := entity.DB().Where("id = ?", equipmentrepair.LibrarianID).First(&librarian); tx.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "librarian not found"})
+		return
+	}
+
+	//10: ค้นหา equipmentpurchasing ด้วย id
+	if tx := entity.DB().Where("id = ?", equipmentrepair.EquipmentPurchasingID).First(&equipmentpurchasing); tx.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "equipmentpurchasing not found"})
+		return
+	}
+
+	//11: ค้นหา level ด้วย id
+	if tx := entity.DB().Where("id = ?", equipmentrepair.LevelID).First(&level); tx.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "level not found"})
+		return
+	}
+
+	//12: สร้าง equimentrepair
+	er := entity.EquipmentRepair{
+		EquipmentPurchasingID:	equipmentrepair.EquipmentPurchasingID,
+		LevelID:          		equipmentrepair.LevelID,
+		Date:             		equipmentrepair.Date.Local(),
+		Note:             		equipmentrepair.Note,
+		LibrarianID:      		equipmentrepair.LibrarianID,
+	}
+
+	//Validate
+	if _, err := govalidator.ValidateStruct(equipmentrepair); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	//13: บันทึก
+	if err := entity.DB().Create(&er).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": er}) //ส่ง BP กลับไปตรงที่ fetch ที่เราเรียกใช้
+}
+
+// GET bookRepair
+func GetAllEquipmentRepair(c *gin.Context) {
+
+	var equipmentrepair []entity.EquipmentRepair
+
+	if err := entity.DB().Model(&entity.EquipmentRepair{}).Preload("EquipmentPurchasing").Preload("Level").Preload("Librarian").Find(&equipmentrepair).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": equipmentrepair})
+}
+
+// GET equipmentRepair By ID
+func GetEquipmentRepairByID(c *gin.Context) {
+
+	var equipmentrepair entity.EquipmentRepair
+
+	Id := c.Param("id") //id ที่เราตั้งไว้ใน main.go ที่อยู่หลัง : ตัวอย่าง >> /equipmentRepair/:id
+	if err := entity.DB().Model(&entity.EquipmentRepair{}).Where("ID = ?", Id).Preload("EquipmentPurchasing").Preload("Level").Preload("Librarian").Find(&equipmentrepair); err.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("EquipmentRepairID :  Id%s not found.", Id)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": equipmentrepair})
+}
+
+// PATCH /equipmentPurchasing
+func UpdateEquipmentRepair(c *gin.Context) {
+	var equipmentrepair entity.EquipmentRepair
+
+	if err := c.ShouldBindJSON(&equipmentrepair); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if tx := entity.DB().Where("id = ?", equipmentrepair.ID).First(&entity.EquipmentRepair{}); tx.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "equipmentrepair not found"}) //เช็คว่ามีไอดีอยู่ในดาต้าเบสมั้ย
+		return
+	}
+	if _, err := govalidator.ValidateStruct(equipmentrepair); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	equipmentrepair.Date = equipmentrepair.Date.Local()
+
+	if err := entity.DB().Save(&equipmentrepair).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": equipmentrepair})
+}
+
+// DELETE equipmentRepair By id
+func DeleteEquipmentRepair(c *gin.Context) {
+	Id := c.Param("id")
+	if tx := entity.DB().Delete(&entity.EquipmentRepair{}, Id); tx.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "equipmentrepair ID not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("EquipmentRepairID :  Id%s deleted.", Id)})
+}
